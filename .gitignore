@@ -1,0 +1,8 @@
+__pycache__/
+*.pyc
+work/
+page_images/
+_epub_fix_tmp/
+*.epub
+*.pdf
+.env

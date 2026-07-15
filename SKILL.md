@@ -42,6 +42,14 @@ python scripts/step2_preprocess.py work/书名 --fix-cjk-spaces   # ABBYY 输出
 1. 打开 `preprocess_report.txt`，向用户展示被删除的重复行，确认无误伤
 2. 检查抢救到的脚注条数；若为 0 且正文里有 `[^fn]` 标记，警告用户脚注
    可能彻底丢失，需要用 render_page.py 从原 PDF 补录
+3. 对每本书先跑一次全文漏转标号扫描：
+   ```bash
+   python scripts/check_bare_footnote_markers.py work/书名/final.md
+   ```
+   命中的是“句末普通黑色数字”的**候选项**，不能批量删除。必须逐项对照
+   `content_list.json` 的 `page_footnote` 和原 PDF 页图：有对应脚注的改为
+   `[^fnN]` 并补全定义；确认是年份、页码等正文数字的才可用 `--allow` 留下，
+   并在交付记录中说明理由。
 
 ## Step 3 — 结构校对（由你逐块完成，不调用任何外部接口）
 
@@ -105,6 +113,8 @@ grep -n '^#' work/书名/final.md
   因此标题里的 OCR 错字（如"刍民"/"初民"形近误认）不会被护栏拦截——
   对标题树里每个可疑标题用 render_page.py 对图确认
 - [ ] 原书目录页本身已删除（EPUB 目录由 pandoc 生成，保留会重复）
+- [ ] EPUB 导航层级必须以原书目录页为唯一准则：只保留原目录实际列出的篇、章、界槛等条目；正文中的“第一节／第二节／余论”等未列入原目录的小节不得进入侧栏导航
+- [ ] 若 Pandoc 根据 `##` 自动生成了额外导航项，导出后必须同时重建 `EPUB/nav.xhtml` 与 `EPUB/toc.ncx`；不能只改其中一个，因为不同阅读器可能读取不同的目录索引
 
 ## Step 5 — 导出 EPUB
 
@@ -119,6 +129,10 @@ pandoc work/书名/final.md -o 书名.epub \
 python scripts/step5_fix_epub.py 书名.epub 书名_final.epub --cover file0.jpg
 ```
 
+微信读书兼容性：`step5_fix_epub.py` 会从正文 XHTML 中移除会被微信读书误解为 Guide 条目的
+`epub:type="bodymatter"`、`noteref`、`footnotes`、`footnote` 等语义标记，同时删除旧 EPUB2 `<guide>`，避免出现一长串
+`Pages / 1、2、3… / footnotes / fn1…`。脚注的实际链接、可见编号和返回正文链接必须保留。脚本还会把可点击的“目录”页加入阅读顺序和侧栏目录。
+
 脚注导出验收（必须做）：
 
 - 正文中的每个脚注引用必须仍在原段落内；不能因为脚注标记而拆出新段落或强制换行。
@@ -126,9 +140,14 @@ python scripts/step5_fix_epub.py 书名.epub 书名_final.epub --cover file0.jpg
 - 脚注条目只显示一套全书编号。去掉条目开头遗留的 `①/②/...` 等原页码序号。
 - 脚注可见编号本身必须是返回正文对应引用的链接（`href="#fnrefN"`）；不要额外添加箭头或其他符号，因为部分阅读器会将缺字形渲染成 `?`。
 - 打包前在 EPUB XHTML 中抽查：脚注引用数、返回链接数相等；`</a>$` 和脚注编号后紧跟的圈号均为 0。
+- 对照原 PDF 抽查每章开头：正文中不能遗留紧贴引文句末的普通黑色 `1、2、3…`。这类数字若原书页底存在对应注释，必须恢复为 `[^fnN]` 并补齐脚注正文；若原书无对应注释，才可删除残留数字。
+- **全文硬性验收**：导出前必须运行 `check_bare_footnote_markers.py`；除已记录的
+  `--allow` 正文数字外，输出必须是 `UNREVIEWED_BARE_FOOTNOTE_CANDIDATES=0`。每一项
+  修复都要同时核对“正文标号、脚注正文、原 PDF 页脚”三者，避免把正文数字误当脚注，
+  也避免出现有黑色标号却没有脚注内容的孤儿引用。
 
 导出后用 `python -c "import zipfile; zipfile.ZipFile('书名_final.epub').testzip()"`
-做完整性检查，并提醒用户在阅读器里抽查：目录、脚注编号与跳转、封面。
+做完整性检查，并提醒用户在阅读器里抽查：目录、脚注编号与跳转、封面。抽查目录时必须确认条目数和层级与原书目录页一致，且不含正文小节。
 
 ## 首次处理一本新书时
 
@@ -141,8 +160,9 @@ python scripts/step5_fix_epub.py 书名.epub 书名_final.epub --cover file0.jpg
 - MinerU 脚注在 content_list.json 而不在 md：不要以为书没有脚注
 - 原书脚注每页从 [1] 重新编号：配对必须结合页码，不能只看编号
 - 扫描 App 水印（如"某某系统"字样）会被识别为正文：加进规则的删除项
-- 目录页的"第X章 …… 页码"行不要当成标题：EPUB 由 pandoc --toc 自动生成
+- 目录页的"第X章 …… 页码"行不要当成标题；Pandoc 自动目录只能作为初稿，最终导航必须按原书目录页逐项复核，必要时重建 nav.xhtml 与 toc.ncx
 - 每天 1000 页 MinerU 高优先级额度：多本书要排期
 - pandoc 的 EPUB3 脚注天生无可见编号：必须跑 step5_fix_epub.py 注入
+- 微信上传前必须跑 step5_fix_epub.py：否则微信读书可能将 Pandoc 的 bodymatter / footnote 语义标签误显示为 Guide 中的 Pages 和 footnotes 清单
 - 标题不在正文护栏保护范围内：标题错字要在 Step 4.5 单独对图核查
 - 章内 `*` 分节符和章首题词是标题误判的高发区：Step 4.5 清单逐项过

@@ -78,14 +78,34 @@ def main():
     for xf in sorted(text_dir.glob("*.xhtml")):
         t = xf.read_text(encoding="utf-8")
 
-        # 1. 脚注编号注入：aside id="fnN" 的第一个 <p> 前加 "N. "
+        # 1. 脚注编号注入：编号本身是返回正文的链接。
+        # Pandoc 的正文引用 id 为 fnrefN；不要额外插入箭头字符，
+        # 否则部分阅读器会因字体缺字显示为问号或乱码。
         def _num(m):
             nonlocal n_fn
             n_fn += 1
-            return f'{m.group(1)}<p><b>{m.group(2)}.</b> '
+            num = m.group(2)
+            return (
+                f'{m.group(1)}<p>'
+                f'<a href="#fnref{num}" class="footnote-back" '
+                f'role="doc-backlink"><b>{num}.</b></a> '
+            )
         t = re.sub(
             r'(<aside [^>]*id="fn(\d+)"[^>]*>\s*)<p>',
             _num, t,
+        )
+
+        # OCR/Markdown 公式标记经脚注替换后可能遗留一个闭合 $。
+        # 只删除紧贴脚注引用链接的 $，避免误改正文中的数学符号。
+        t = re.sub(
+            r'(<a [^>]*class="footnote-ref"[^>]*>.*?</a>)\$', r'\1', t
+        )
+
+        # 有些扫描书的脚注正文仍以 ①、② 等原页码标记起首。
+        # EPUB 已给出全书可跳转编号，保留两套编号既冗余又易混淆。
+        t = re.sub(
+            r'(<a [^>]*class="footnote-back"[^>]*><b>\d+\.</b></a>\s*)'
+            r'[①②③④⑤⑥⑦⑧⑨⑩]', r'\1', t
         )
 
         # 2. 分节符标题 -> hr

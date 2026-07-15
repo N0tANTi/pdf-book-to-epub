@@ -52,6 +52,54 @@ def clean_toc(root: Path, titles: set[str]):
         ncx.write_text(t, encoding="utf-8")
 
 
+def make_weread_safe(root: Path):
+    """Avoid WeRead turning EPUB semantic markup into a long Guide list."""
+    removed = 0
+    for xf in sorted((root / "EPUB" / "text").glob("*.xhtml")):
+        text = xf.read_text(encoding="utf-8")
+        text, count = re.subn(
+            r'\s+epub:type="(?:frontmatter|titlepage|cover|bodymatter|noteref|footnotes|footnote)"',
+            "", text,
+        )
+        removed += count
+        xf.write_text(text, encoding="utf-8")
+
+    nav = root / "EPUB" / "nav.xhtml"
+    if nav.exists():
+        text = nav.read_text(encoding="utf-8")
+        toc_open = re.search(r'<nav\b[^>]*epub:type="toc"[^>]*>.*?<ol>', text, re.S)
+        if toc_open and '>目录</a>' not in text:
+            text = text[:toc_open.end()] + '\n        <li><a href="nav.xhtml">目录</a></li>' + text[toc_open.end():]
+        nav.write_text(text, encoding="utf-8")
+
+    ncx = root / "EPUB" / "toc.ncx"
+    if ncx.exists():
+        text = ncx.read_text(encoding="utf-8")
+        if '<content src="nav.xhtml"/>' not in text:
+            point = ('\n    <navPoint id="navPoint-toc" playOrder="1">\n'
+                     '      <navLabel><text>目录</text></navLabel>\n'
+                     '      <content src="nav.xhtml"/>\n'
+                     '    </navPoint>')
+            text = text.replace("<navMap>", "<navMap>" + point, 1)
+            order = 0
+            def renumber(_match):
+                nonlocal order
+                order += 1
+                return f'playOrder="{order}"'
+            text = re.sub(r'playOrder="\d+"', renumber, text)
+        ncx.write_text(text, encoding="utf-8")
+
+    opf = root / "EPUB" / "content.opf"
+    if opf.exists():
+        text = opf.read_text(encoding="utf-8")
+        text = re.sub(r'\s*<guide>.*?</guide>\s*', "\n", text, flags=re.S)
+        nav_item = re.search(r'<item\s+id="([^"]+)"[^>]*href="nav.xhtml"', text)
+        if nav_item and not re.search(rf'<itemref\s+idref="{re.escape(nav_item.group(1))}"', text):
+            text = re.sub(r'(<spine\b[^>]*>)', rf'\1\n    <itemref idref="{nav_item.group(1)}" linear="yes"/>', text, count=1)
+        opf.write_text(text, encoding="utf-8")
+    return removed
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("src", type=Path)
@@ -91,7 +139,7 @@ def main():
                 f'role="doc-backlink"><b>{num}.</b></a> '
             )
         t = re.sub(
-            r'(<aside [^>]*id="fn(\d+)"[^>]*>\s*)<p>',
+            r'(<aside [^>]*id="fn(\d+)"[^>]*>\s*)<p>(?!\s*<a\b[^>]*class="footnote-back")',
             _num, t,
         )
 
@@ -143,6 +191,7 @@ def main():
             navf.write_text(t, encoding="utf-8")
 
     clean_toc(tmp, removed_toc_titles)
+    n_weread_semantics = make_weread_safe(tmp)
 
     # 6. 封面
     if args.cover:
@@ -163,6 +212,7 @@ def main():
 
     repack(tmp, args.dst)
     shutil.rmtree(tmp)
+    print(f"WeRead Guide 兼容处理：移除正文 epub:type {n_weread_semantics} 处；目录页已加入阅读顺序")
     print(f"脚注编号注入: {n_fn} 条 | 分节符转hr: {n_hr} 处 | 题词降级: {n_epi} 处")
     print(f"目录移除条目: {sorted(removed_toc_titles)}")
     print(f"输出: {args.dst}")

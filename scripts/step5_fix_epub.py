@@ -71,7 +71,10 @@ def make_weread_safe(root: Path, preserve_noteref=False):
     nav = root / "EPUB" / "nav.xhtml"
     if nav.exists():
         text = nav.read_text(encoding="utf-8")
-        toc_open = re.search(r'<nav\b[^>]*epub:type="toc"[^>]*>.*?<ol>', text, re.S)
+        toc_open = re.search(
+            r'<nav\b[^>]*epub:type="toc"[^>]*>(?:(?!</nav>).)*?<ol\b[^>]*>',
+            text, re.S,
+        )
         if toc_open and '>目录</a>' not in text:
             text = text[:toc_open.end()] + '\n        <li><a href="nav.xhtml">目录</a></li>' + text[toc_open.end():]
         nav.write_text(text, encoding="utf-8")

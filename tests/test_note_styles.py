@@ -9,6 +9,7 @@ from xml.etree import ElementTree as ET
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / 'scripts'))
 from epub_note_style import apply_weread_cards, local_target
+from step5_fix_epub import make_weread_safe
 
 NS = {'h': 'http://www.w3.org/1999/xhtml', 'o': 'http://www.idpf.org/2007/opf'}
 
@@ -32,6 +33,19 @@ def fixture(root, cross=False, missing=False):
 
 
 class NoteStyleTests(unittest.TestCase):
+    def test_toc_with_class_does_not_insert_into_landmarks(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root=Path(temp); fixture(root)
+            path=root/'EPUB/nav.xhtml'
+            path.write_text('<html xmlns="http://www.w3.org/1999/xhtml" xmlns:epub="http://www.idpf.org/2007/ops"><body><nav epub:type="toc"><h1>目录</h1><ol class="toc"><li><a href="text/ch.xhtml">第一章</a></li></ol></nav><nav epub:type="landmarks"><ol><li><a href="text/ch.xhtml">正文</a></li></ol></nav></body></html>',encoding='utf-8')
+            make_weread_safe(root)
+            doc=ET.parse(path)
+            ns=dict(NS,e='http://www.idpf.org/2007/ops')
+            toc=doc.find('.//h:nav[@e:type="toc"]',ns)
+            landmarks=doc.find('.//h:nav[@e:type="landmarks"]',ns)
+            self.assertEqual(toc.find('.//h:a',NS).text,'目录')
+            self.assertEqual(landmarks.find('.//h:a',NS).text,'正文')
+
     def test_cards_preserve_text_ids_backlinks_and_xml(self):
         with tempfile.TemporaryDirectory() as temp:
             root=Path(temp); fixture(root)

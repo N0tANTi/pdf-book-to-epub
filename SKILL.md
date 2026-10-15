@@ -14,6 +14,20 @@ step1(脚本,MinerU API) -> step2(脚本,确定性清洗) -> step3(你自己,结
 
 工作目录约定为 `work/<书名>/`。依赖：`pip install requests pypdf pymupdf`，系统需有 pandoc。
 
+## 注释方式：在首次制作样章 EPUB 前询问一次
+
+书内数据的配对与校对完成后、第一次导出样章 EPUB 前，若用户尚未选择，询问：
+
+> 这本书的注释希望用哪种方式？
+> 1. **数字跳转注释**：正文显示数字编号，点击跳到章末注释，点击编号返回正文，适合需要通用跳转的阅读场景。
+> 2. **微信读书弹窗注释（“注”字卡片）**：专门适配微信读书，正文显示“注”字图片，点击在当前页弹出注释内容，减少来回跳转。
+
+- 把选择写入本书规则文件：`annotation_style: jump` 或 `annotation_style: weread-card`，并记录目标阅读器；样章、整书和修订沿用该选择。
+- 如果用户已在对话中选定，或本书已有规则记录，直接沿用，不重复询问。用户明确改选时更新记录。
+- 用户未答复时继续文字提取、脚注配对和校对；保持问题待答，正式 EPUB 导出前取得选择，不把沉默当作同意。只交付 Markdown 时无需询问 EPUB 的显示方式。
+- 两种方式的注释原文与配对规则相同，保留 Markdown 脚注数据。只在导出阶段切换显示方式；本技能不替代翻译逐段核对。
+- 微信读书方案使用已在本项目用户环境中验证的 B 式图片标记；它不是各阅读器通用的弹窗保证，具体客户端仍以样章实测为准。不要用不可点击的普通“注”字或未经验证的混合链接替代。
+
 ## Step 1 — MinerU 识别
 
 需要环境变量 `MINERU_API_TOKEN`（用户在 mineru.net API 管理页创建）。
@@ -124,14 +138,23 @@ pandoc work/书名/final.md -o 书名.epub \
   --toc --toc-depth=3 --split-level=2 --resource-path=work/书名
 
 # 必跑的后处理：注入脚注可见编号（pandoc 的 epub3 脚注是无编号的 aside，
-# 微信读书/多看/Kindle 等不支持弹窗脚注的阅读器会显示为无序号段落堆）
+# 不识别相应弹窗标记的阅读器可能显示为无序号段落堆）
 # 同时可设封面、兜底清理漏网的分节符标题
-python scripts/step5_fix_epub.py 书名.epub 书名_final.epub --cover file0.jpg
+python scripts/step5_fix_epub.py 书名.epub 书名_final.epub --cover file0.jpg --note-style jump
+# 若用户选择“微信读书弹窗注释”，改用：
+python scripts/step5_fix_epub.py 书名.epub 书名_final.epub --cover file0.jpg --note-style weread-card
 ```
 
-微信读书兼容性：`step5_fix_epub.py` 会从正文 XHTML 中移除会被微信读书误解为 Guide 条目的
+两种显示方式：`jump` 保留正文数字引用及章末跳转；`weread-card` 在通用修复后调用
+`epub_note_style.py`，把正文引用替换为裸 `img.qqreader-footnote`，注释全文写入经 XML 转义的
+`alt`，图片不再包裹跳转链接。图片资产由 `assets/note.png` 提供并注册进 OPF manifest。
+原正文引用 ID、注释完整 XHTML 和章末编号返回链接均保留。该方案的弹窗为纯文字；
+图片、复杂公式及富文本的完整版本仍在章末，不应声称弹窗保留所有富文本。
+脚本为了兼容旧命令默认 `jump`；这不是助手在用户未选择时静默替用户决定的理由。
+
+微信读书 Guide 兼容性：`step5_fix_epub.py` 会从正文 XHTML 中移除会被微信读书误解为 Guide 条目的
 `epub:type="bodymatter"`、`noteref`、`footnotes`、`footnote` 等语义标记，同时删除旧 EPUB2 `<guide>`，避免出现一长串
-`Pages / 1、2、3… / footnotes / fn1…`。脚注的实际链接、可见编号和返回正文链接必须保留。脚本还会把可点击的“目录”页加入阅读顺序和侧栏目录。
+`Pages / 1、2、3… / footnotes / fn1…`。数字跳转模式保留实际链接、可见编号和返回正文链接；微信读书弹窗模式保留引用 ID、注释完整内容和返回正文链接。脚本还会把可点击的“目录”页加入阅读顺序和侧栏目录。
 
 脚注导出验收（必须做）：
 
@@ -140,6 +163,7 @@ python scripts/step5_fix_epub.py 书名.epub 书名_final.epub --cover file0.jpg
 - 脚注条目只显示一套全书编号。去掉条目开头遗留的 `①/②/...` 等原页码序号。
 - 脚注可见编号本身必须是返回正文对应引用的链接（`href="#fnrefN"`）；不要额外添加箭头或其他符号，因为部分阅读器会将缺字形渲染成 `?`。
 - 打包前在 EPUB XHTML 中抽查：脚注引用数、返回链接数相等；`</a>$` 和脚注编号后紧跟的圈号均为 0。
+- 微信读书弹窗模式另查：每个原引用对应一个未包裹链接的 `img.qqreader-footnote`，`alt` 非空且与对应注释全文一致（去掉编号和返回链接）；XML 转义后引号、`&`、多段文字均无截断；图标已登记在 manifest。图片引用数按原引用计，多个引用指向同一注释时不按唯一注释数误判。样章在微信读书中检查“点击注→弹出内容→关闭仍在原位置”，不要把 ZIP/XML 检查说成客户端验证。
 - 对照原 PDF 抽查每章开头：正文中不能遗留紧贴引文句末的普通黑色 `1、2、3…`。这类数字若原书页底存在对应注释，必须恢复为 `[^fnN]` 并补齐脚注正文；若原书无对应注释，才可删除残留数字。
 - **全文硬性验收**：导出前必须运行 `check_bare_footnote_markers.py`；除已记录的
   `--allow` 正文数字外，输出必须是 `UNREVIEWED_BARE_FOOTNOTE_CANDIDATES=0`。每一项

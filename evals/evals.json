@@ -1,0 +1,23 @@
+{
+  "skill_name": "pdf-book-to-epub",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "请把这本已完成 OCR 和结构校对、含脚注的 PDF 制作成 EPUB。我还没选注释显示方式。",
+      "expected_output": "首次样章导出前询问两种方式：数字跳转注释、明确标注适配微信读书的注字弹窗；未答复时继续独立校对，不静默替用户选择。",
+      "files": []
+    },
+    {
+      "id": 2,
+      "prompt": "接着做整本 EPUB。此前样章 B 的注字图片在我的微信读书里能弹窗，我已经选定它。",
+      "expected_output": "沿用 weread-card，不重复询问；使用裸 qqreader-footnote 图片和完整 alt，保留原引用 ID 及章末注释返回路径，不转成 A/C 混合方案。",
+      "files": []
+    },
+    {
+      "id": 3,
+      "prompt": "这次只要校对后的 Markdown，不导出 EPUB。",
+      "expected_output": "保持 Markdown 脚注结构，无需询问 EPUB 显示方式；不把结构校对替代为翻译，不生成 EPUB。",
+      "files": []
+    }
+  ]
+}

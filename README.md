@@ -45,6 +45,21 @@ Agent 会按 SKILL.md 的流程走：识别 → 预处理 → 建立本书专属
 逐块校对 → 对图核查疑点 → 导出。**建议第一次先让它只处理一章**（选脚注
 密集的），确认规则文件后再跑全书。
 
+## 注释显示方式
+
+助手会在首次导出样章 EPUB 前询问一次，并把选择保存在本书规则文件中；已有选择时不重复询问。
+
+1. **数字跳转注释**：点击正文数字到章末看注释，点击编号返回正文。
+2. **微信读书弹窗注释（“注”字卡片）**：适配微信读书，点击正文中的“注”字图片，在当前位置弹出注释。使用 `qqreader-footnote` 图片和 `alt` 文字，不依赖普通文字链接或书内 JavaScript。保留章末完整注释备查；其他阅读器及不同客户端版本须以实际测试为准。
+
+```bash
+python scripts/step5_fix_epub.py raw.epub book.epub --note-style jump
+python scripts/step5_fix_epub.py raw.epub book.epub --note-style weread-card
+python -m unittest discover -s tests
+```
+
+省略 `--note-style` 时脚本兼容旧命令，默认数字跳转；助手仍应取得用户的选择。Markdown 的注释配对与文字校对不因显示方式而改变。
+
 ## 目录结构
 
 ```
@@ -55,6 +70,9 @@ scripts/
   check_guard.py              校对护栏：Agent 每改一块必须通过的自检
   render_page.py              渲染 PDF 指定页为 PNG，供 Agent 对图核查
   step5_fix_epub.py           EPUB 后处理：脚注编号注入/封面/分节符清理
+  epub_note_style.py          微信读书图片式弹窗注释转换
+assets/note.png               “注”字图标（自制，无书籍内容）
+tests/test_note_styles.py     注释导出回归检查
 references/
   规则模板.md                  每本书专属校对规则的模板
 ```

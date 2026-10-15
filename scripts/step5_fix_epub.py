@@ -14,10 +14,11 @@ Step 5.5: EPUB 后处理修复（pandoc 输出的通病 + 本书残留问题）
 """
 import argparse
 import re
-import shutil
 import sys
+import tempfile
 import zipfile
 from pathlib import Path
+from epub_note_style import apply_weread_cards
 
 
 def repack(src_dir: Path, out_path: Path):
@@ -52,13 +53,16 @@ def clean_toc(root: Path, titles: set[str]):
         ncx.write_text(t, encoding="utf-8")
 
 
-def make_weread_safe(root: Path):
+def make_weread_safe(root: Path, preserve_noteref=False):
     """Avoid WeRead turning EPUB semantic markup into a long Guide list."""
     removed = 0
     for xf in sorted((root / "EPUB" / "text").glob("*.xhtml")):
         text = xf.read_text(encoding="utf-8")
+        kinds = 'frontmatter|titlepage|cover|bodymatter|footnotes|footnote'
+        if not preserve_noteref:
+            kinds += '|noteref'
         text, count = re.subn(
-            r'\s+epub:type="(?:frontmatter|titlepage|cover|bodymatter|noteref|footnotes|footnote)"',
+            rf'\s+epub:type="(?:{kinds})"',
             "", text,
         )
         removed += count
@@ -104,6 +108,8 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("src", type=Path)
     ap.add_argument("dst", type=Path)
+    ap.add_argument("--note-style", choices=["jump", "weread-card"], default="jump",
+                    help="jump: 数字跳转注释（兼容旧命令）；weread-card: 适配微信读书的图片弹窗注释")
     ap.add_argument("--cover", default=None, help="media/ 下的封面文件名，如 file0.jpg")
     ap.add_argument("--fix-title", action="append", default=[],
                     help="标题替换，格式 '错=>对'，可多次")
@@ -113,9 +119,11 @@ def main():
                     help="仅从目录移除的标题文本，可多次")
     args = ap.parse_args()
 
-    tmp = Path("_epub_fix_tmp")
-    if tmp.exists():
-        shutil.rmtree(tmp)
+    with tempfile.TemporaryDirectory(prefix="epub_fix_") as temp_name:
+        process(args, Path(temp_name))
+
+
+def process(args, tmp):
     with zipfile.ZipFile(args.src) as zf:
         zf.extractall(tmp)
 
@@ -191,7 +199,7 @@ def main():
             navf.write_text(t, encoding="utf-8")
 
     clean_toc(tmp, removed_toc_titles)
-    n_weread_semantics = make_weread_safe(tmp)
+    n_weread_semantics = make_weread_safe(tmp, preserve_noteref=args.note_style == "weread-card")
 
     # 6. 封面
     if args.cover:
@@ -210,12 +218,13 @@ def main():
         else:
             print(f"警告: opf 中未找到 media/{args.cover}", file=sys.stderr)
 
+    n_cards = apply_weread_cards(tmp) if args.note_style == "weread-card" else 0
     repack(tmp, args.dst)
-    shutil.rmtree(tmp)
     print(f"WeRead Guide 兼容处理：移除正文 epub:type {n_weread_semantics} 处；目录页已加入阅读顺序")
     print(f"脚注编号注入: {n_fn} 条 | 分节符转hr: {n_hr} 处 | 题词降级: {n_epi} 处")
     print(f"目录移除条目: {sorted(removed_toc_titles)}")
     print(f"输出: {args.dst}")
+    print(f"注释方式: {args.note_style} | 微信读书图片注释: {n_cards} 条")
 
 
 if __name__ == "__main__":
